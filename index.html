@@ -1,0 +1,597 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Preference Game Lab</title>
+<meta name="description" content="RLHF read as a game: Bradley-Terry reward modelling versus Nash learning from preferences by self-play. MIT 6.7980, session 5.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&display=swap">
+<style>
+:root{
+  color-scheme:light;
+  --bg:#FFFFFF; --surface:#F5F5F4; --panel:#FFFFFF; --sunk:#EFEEEC; --ink:#0A0A0A; --muted:#6B6B6B; --line:#E7E5E4;
+  --accent:#0A0A0A; --accent-ink:#FFFFFF; --link:#0A0A0A; --pos:#0A0A0A; --neg:#0A0A0A;
+  --rA:#0A0A0A; --rB:#525252; --rC:#8A8A8A; --rD:#BDBDBD; --rE:#E3E3E3;
+  --sans:"Geist", "Helvetica Neue", Helvetica, Arial, sans-serif;
+  --serif:var(--sans);
+  --mono:"Geist Mono", ui-monospace, "SF Mono", Menlo, monospace;
+}
+@property --spin{syntax:"<angle>";inherits:false;initial-value:0deg}
+*{box-sizing:border-box}
+html{background:var(--bg);scroll-behavior:smooth}
+body{margin:0;background:var(--bg);color:var(--ink);font:15.5px/1.6 var(--sans);-webkit-font-smoothing:antialiased}
+img{max-width:100%}
+a{color:inherit;text-decoration:none}
+.wrap{max-width:1200px;margin:0 auto;padding:0 24px 96px;display:flex;flex-direction:column;gap:28px}
+h1,h2,h3{font-family:var(--sans);text-wrap:balance;margin:0}
+h1{font-size:clamp(40px,6.2vw,76px);line-height:1.0;font-weight:500;letter-spacing:-.045em}
+h2{font-size:clamp(24px,2.6vw,32px);line-height:1.12;font-weight:500;letter-spacing:-.03em}
+h3{font-size:17px;line-height:1.3;font-weight:500;letter-spacing:-.01em}
+p{margin:0}
+.eyebrow{font:500 12.5px/1.4 var(--mono);color:var(--muted);letter-spacing:.02em}
+.mono{font-family:var(--mono);font-variant-numeric:tabular-nums}
+.muted{color:var(--muted)}
+.small{font-size:13px}
+
+/* nav */
+.nav{position:sticky;top:env(safe-area-inset-top,0px);z-index:5;display:flex;align-items:center;justify-content:space-between;gap:16px;padding:14px 0;background:color-mix(in srgb,var(--bg) 82%,transparent);backdrop-filter:saturate(1.4) blur(14px);-webkit-backdrop-filter:saturate(1.4) blur(14px)}
+.brand{display:flex;align-items:center;gap:10px;font-weight:600;letter-spacing:-.02em;font-size:15.5px}
+.mark{width:22px;height:22px;border-radius:50%;background:conic-gradient(from 200deg,#0A0A0A,#8A8A8A,#F5F5F4,#525252,#0A0A0A);box-shadow:inset 0 0 0 1px rgb(0 0 0/.08)}
+.navlinks{display:flex;gap:26px;font-size:14px;color:var(--muted)}
+.navlinks a:hover{color:var(--ink)}
+@media (max-width:720px){.navlinks{display:none}}
+.pill{display:inline-flex;align-items:center;gap:8px;border-radius:999px;padding:10px 18px;font:500 14px var(--sans);border:1px solid var(--line);background:var(--bg);color:var(--ink);cursor:pointer;white-space:nowrap}
+.pill:hover{border-color:#CFCBC8}
+.pill.dark{background:var(--ink);color:#fff;border-color:var(--ink)}
+.pill.dark:hover{background:#262626}
+.pill.sm{padding:7px 14px;font-size:13px}
+
+/* hero */
+.hero{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,.85fr);gap:40px;align-items:center;padding:56px 0 36px}
+@media (max-width:880px){.hero{grid-template-columns:minmax(0,1fr);padding-top:28px}}
+.hero-copy{display:flex;flex-direction:column;gap:22px}
+.badge{align-self:flex-start;display:inline-flex;gap:8px;align-items:center;border:1px solid var(--line);border-radius:999px;padding:5px 12px 5px 6px;font-size:13px;color:var(--muted)}
+.badge b{background:var(--ink);color:#fff;border-radius:999px;padding:2px 9px;font-weight:500;font-size:12px}
+.lede{max-width:56ch;font-size:18px;line-height:1.55;color:var(--muted)}
+.lede b{color:var(--ink);font-weight:500}
+.cta{display:flex;gap:10px;flex-wrap:wrap}
+.orbwrap{display:flex;flex-direction:column;align-items:center;gap:16px}
+.orb{position:relative;width:min(400px,78vw);max-width:100%;aspect-ratio:1;border-radius:50%;overflow:hidden;background:#EDEDED;box-shadow:0 40px 80px -30px rgb(0 0 0/.35),inset 0 0 0 1px rgb(0 0 0/.06)}
+.orb-core{position:absolute;inset:-12%;border-radius:50%;background:conic-gradient(from var(--spin),#0A0A0A,#8A8A8A,#F5F5F4,#525252,#0A0A0A);filter:blur(26px);animation:spin 22s linear infinite}
+.orb::after{content:"";position:absolute;inset:0;border-radius:50%;background:radial-gradient(circle at 32% 26%,rgb(255 255 255/.9),rgb(255 255 255/0) 34%),radial-gradient(circle at 70% 85%,rgb(255 255 255/.25),rgb(255 255 255/0) 40%)}
+@keyframes spin{to{--spin:360deg}}
+.orbcap{font:12.5px var(--mono);color:var(--muted);text-align:center}
+.orbcap b{color:var(--ink);font-weight:500}
+
+/* prompt + responses */
+.card,.section{background:var(--surface);border-radius:28px;padding:30px;display:flex;flex-direction:column;gap:16px;min-width:0}
+@media (max-width:560px){.card,.section{padding:20px;border-radius:22px}}
+.sechead{display:flex;flex-direction:column;gap:6px}
+.prompt{font-size:clamp(20px,2.2vw,26px);line-height:1.3;letter-spacing:-.02em;font-weight:400}
+.resps{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px}
+.resp{background:var(--panel);border-radius:18px;padding:16px;display:flex;flex-direction:column;gap:8px}
+.resp .top{display:flex;align-items:center;gap:9px}
+.chip{width:24px;height:24px;border-radius:50%;display:grid;place-items:center;font:600 11.5px var(--mono);flex:none;box-shadow:inset 0 0 0 1px rgb(0 0 0/.08)}
+.resp .name{font-weight:500;font-size:14.5px;letter-spacing:-.01em}
+.resp .txt{font-size:13.5px;line-height:1.55;color:var(--muted)}
+.resp .meta{font:12px var(--mono);color:var(--muted);margin-top:auto}
+
+.grid{display:grid;grid-template-columns:minmax(0,380px) minmax(0,1fr);gap:16px;align-items:start}
+@media (max-width:960px){.grid{grid-template-columns:minmax(0,1fr)}}
+.panels{display:grid;grid-template-columns:minmax(0,1fr);gap:16px}
+#prefs{position:sticky;top:76px}
+@media (max-width:960px){#prefs{position:static}}
+
+.tabs{display:inline-flex;align-self:flex-start;background:var(--panel);border-radius:999px;padding:4px;gap:2px;flex-wrap:wrap;box-shadow:inset 0 0 0 1px var(--line)}
+.tabs button{border:0;background:transparent;color:var(--muted);font:500 13px var(--sans);padding:7px 14px;border-radius:999px;cursor:pointer}
+.tabs button:hover{color:var(--ink)}
+.tabs button[aria-pressed="true"]{background:var(--ink);color:#fff}
+button:focus-visible,input:focus-visible,select:focus-visible,a:focus-visible{outline:2px solid var(--ink);outline-offset:3px}
+
+.mx-wrap{overflow-x:auto;background:var(--panel);border-radius:18px;padding:12px}
+table.mx{border-collapse:separate;border-spacing:4px;font:13px var(--mono);font-variant-numeric:tabular-nums;margin:0 auto}
+table.mx th{font:500 12.5px var(--mono);color:var(--muted);padding:2px 4px}
+table.mx td{width:52px;height:36px;text-align:center;padding:0;border-radius:10px}
+table.mx td.diag{color:var(--muted)}
+table.mx input{width:100%;height:100%;border:0;background:transparent;color:inherit;font:inherit;font-weight:inherit;text-align:center;padding:0;border-radius:10px;-moz-appearance:textfield}
+table.mx input:hover{box-shadow:inset 0 0 0 1px var(--line)}
+table.mx input::-webkit-inner-spin-button,table.mx input::-webkit-outer-spin-button{-webkit-appearance:none;margin:0}
+.mxnote{font-size:13px;color:var(--muted)}
+.btnrow{display:flex;flex-wrap:wrap;gap:8px}
+.btn{display:inline-flex;align-items:center;border:1px solid var(--line);background:var(--panel);color:var(--ink);font:500 13px var(--sans);padding:8px 14px;border-radius:999px;cursor:pointer}
+.btn:hover{border-color:#CFCBC8}
+.btn.primary{background:var(--ink);color:#fff;border-color:var(--ink);padding-inline:20px}
+select.btn{appearance:none;padding-right:30px;background:var(--panel) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%236B6B6B' fill='none' stroke-width='1.5'/%3E%3C/svg%3E") no-repeat right 12px center}
+
+.ctl{display:flex;flex-direction:column;gap:8px}
+.ctl .lab{display:flex;justify-content:space-between;align-items:baseline;gap:10px;font:500 13.5px var(--sans)}
+.ctl .lab span:last-child{font:400 12.5px var(--mono);font-variant-numeric:tabular-nums;color:var(--muted)}
+input[type=range]{-webkit-appearance:none;appearance:none;width:100%;height:4px;border-radius:999px;background:#DAD7D4;outline-offset:6px}
+input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:18px;height:18px;border-radius:50%;background:#fff;border:0;box-shadow:0 0 0 1px rgb(0 0 0/.12),0 2px 6px rgb(0 0 0/.18);cursor:pointer}
+input[type=range]::-moz-range-thumb{width:18px;height:18px;border-radius:50%;background:#fff;border:0;box-shadow:0 0 0 1px rgb(0 0 0/.12),0 2px 6px rgb(0 0 0/.18);cursor:pointer}
+input[type=range]:disabled{opacity:.4}
+.hint{font-size:13.5px;color:var(--muted);line-height:1.55}
+.hint b{color:var(--ink);font-weight:500}
+.ctlrow{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:20px;background:var(--panel);border-radius:18px;padding:16px}
+.check{display:flex;align-items:center;gap:7px;font-size:13px;color:var(--muted)}
+input[type=checkbox]{accent-color:var(--ink)}
+
+.formula{font:13px var(--mono);background:var(--panel);border-radius:14px;padding:12px 14px;overflow-x:auto;white-space:nowrap}
+.ref{font:500 11.5px var(--mono);color:var(--ink);background:var(--panel);border-radius:999px;padding:1px 7px;white-space:nowrap;box-shadow:inset 0 0 0 1px var(--line)}
+
+.stack{display:flex;height:12px;border-radius:999px;overflow:hidden;min-width:120px;background:var(--sunk);gap:2px}
+.stack span{display:block;height:100%}
+.bars{display:flex;flex-direction:column;gap:9px;background:var(--panel);border-radius:18px;padding:16px}
+.bar{display:grid;grid-template-columns:22px 1fr 86px;gap:10px;align-items:center;font:12.5px var(--mono);font-variant-numeric:tabular-nums}
+.bar .trk{height:8px;background:var(--sunk);border-radius:999px;position:relative}
+.bar .trk i{position:absolute;inset:0 auto 0 0;display:block;border-radius:999px;background:var(--ink)!important}
+.bar .trk b{position:absolute;top:-4px;bottom:-4px;width:2px;border-radius:2px;background:#9A9A9A}
+
+.chart{width:100%;display:block;border-radius:10px}
+.chartbox{display:flex;flex-direction:column;gap:10px;background:var(--panel);border-radius:18px;padding:16px}
+.chartlab{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;font:500 13.5px var(--sans)}
+.legend{display:flex;gap:16px;flex-wrap:wrap;font-size:12.5px;color:var(--muted)}
+.legend span{display:inline-flex;align-items:center;gap:6px}
+.legend i{width:16px;height:0;border-top:2px solid;display:inline-block}
+.keyrow{display:flex;gap:14px;flex-wrap:wrap;font:12px var(--mono);color:var(--muted)}
+.keyrow span{display:inline-flex;align-items:center;gap:6px}
+.keyrow i{width:10px;height:10px;border-radius:50%;display:inline-block;box-shadow:inset 0 0 0 1px rgb(0 0 0/.1)}
+
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px}
+.stat{background:var(--panel);border-radius:16px;padding:14px 16px;display:flex;flex-direction:column;gap:4px}
+.stat .k{font-size:12.5px;color:var(--muted)}
+.stat .v{font:500 20px var(--mono);letter-spacing:-.02em;font-variant-numeric:tabular-nums}
+
+.player{display:flex;gap:14px;align-items:center;flex-wrap:wrap;background:var(--panel);border-radius:999px;padding:8px 18px 8px 8px}
+.player input[type=range]{flex:1;min-width:140px}
+
+.cmp-wrap{overflow-x:auto;background:var(--panel);border-radius:18px;padding:6px 18px}
+table.cmp,table.map{width:100%;border-collapse:collapse;font-size:14px}
+table.cmp{min-width:640px} table.map{min-width:640px}
+table.cmp th,table.map th{text-align:left;font:500 12px var(--mono);color:var(--muted);padding:12px 14px 12px 0;border-bottom:1px solid var(--line)}
+table.cmp td,table.map td{padding:14px 14px 14px 0;border-bottom:1px solid var(--line);vertical-align:middle}
+table.cmp tr:last-child td,table.map tr:last-child td{border-bottom:0}
+table.map td{vertical-align:top;color:var(--muted)}
+table.map td:first-child{white-space:nowrap;color:var(--ink)}
+table.cmp td.num{font-family:var(--mono);font-variant-numeric:tabular-nums;white-space:nowrap}
+.pill-s{display:inline-block}
+.pill.good,.pill.warn,.pill.bad{padding:3px 10px;font:500 12.5px var(--mono);cursor:default}
+.pill.good{background:var(--ink);color:#fff;border-color:var(--ink)}
+.pill.warn{background:var(--panel)}
+.pill.bad{background:var(--panel);border-style:dashed;border-color:#9A9A9A}
+.try{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px}
+.try .card{background:var(--panel);border-radius:18px;padding:20px;gap:8px}
+.try .num{font:500 12px var(--mono);color:var(--muted)}
+.try p{font-size:14px;color:var(--muted)}
+[id]{scroll-margin-top:84px}
+footer{font-size:13px;color:var(--muted);max-width:80ch;padding:0 6px}
+@media (prefers-reduced-motion: reduce){html{scroll-behavior:auto}.orb-core{animation:none}}
+</style>
+</head>
+<body>
+<div class="wrap">
+<nav class="nav" aria-label="Page">
+  <a class="brand" href="#top"><span class="mark" aria-hidden="true"></span>Preference Game Lab</a>
+  <div class="navlinks"><a href="#lab">Lab</a><a href="#compare">Compare</a><a href="#try">Experiments</a><a href="#lecture">Lecture map</a></div>
+  <a class="pill dark sm" href="#lab">Open the lab</a>
+</nav>
+<header class="hero" id="top">
+  <div class="hero-copy">
+    <span class="badge"><b>S05</b>MIT 6.7980 · Learning in games: algorithms</span>
+    <h1>Align a model by letting it play itself.</h1>
+    <p class="lede">RLHF can be read as a game. Five candidate answers compete in pairwise comparisons, and a policy is a mixed strategy over them. Train it the <b>reward-model way</b> (fit Bradley–Terry scores, then take a KL-regularized softmax), or the <b>game way</b> (run a no-regret learner in self-play until its average reaches a Nash equilibrium). Edit the preferences, blend in an AI judge, and compare what each method ships.</p>
+    <div class="cta"><button class="pill dark" id="heroPlay">Run self-play</button><a class="pill" href="#compare">See the comparison</a></div>
+  </div>
+  <div class="orbwrap">
+    <div class="orb" aria-hidden="true"><div class="orb-core" id="orbCore"></div></div>
+    <p class="orbcap" id="orbCap">Nash mix of the current game</p>
+  </div>
+</header>
+
+<section class="section">
+  <div class="sechead"><div class="eyebrow">The prompt</div></div>
+  <p class="prompt">“Explain to a 10-year-old why the sky is blue.”</p>
+  <div class="resps" id="resps"></div>
+</section>
+
+<div class="grid" id="lab">
+  <!-- LEFT: preferences -->
+  <div class="card" id="prefs">
+    <div class="sechead">
+      <div class="eyebrow">Preferences</div>
+      <h2>Who wins each comparison</h2>
+    </div>
+    <div class="tabs" role="group" aria-label="Which preference matrix to edit">
+      <button id="tabH" aria-pressed="true">Human raters</button>
+      <button id="tabJ" aria-pressed="false">AI judge</button>
+    </div>
+    <div class="mx-wrap"><table class="mx" id="mx"></table></div>
+    <p class="mxnote">Cell (row, column) is P(row ≻ column). Edit the upper triangle; the lower triangle is 1 − p.</p>
+    <div class="btnrow" id="presets">
+      <button class="btn" data-preset="cycle">Human: cyclic (A ≻ B ≻ C ≻ A)</button>
+      <button class="btn" data-preset="trans">Human: transitive</button>
+      <button class="btn" data-preset="judge">Judge: length-biased</button>
+    </div>
+    <div class="ctl">
+      <div class="lab"><label for="lam">RLAIF mix: training labels from the AI judge</label><span id="lamv">0%</span></div>
+      <input type="range" id="lam" min="0" max="1" step="0.05" value="0">
+      <p class="hint">Both methods train on (1 − λ)·human + λ·judge. The comparison table below also scores every policy against the <b>human</b> preferences, so you can see what a biased judge costs.</p>
+    </div>
+  </div>
+
+  <!-- RIGHT: two methods -->
+  <div class="panels">
+    <div class="card" id="rlhf">
+      <div class="sechead">
+        <div class="eyebrow">Method 1 · reward model + KL</div>
+        <h2>Bradley–Terry RLHF</h2>
+      </div>
+      <div class="formula">π<sub>β</sub>(y) ∝ π<sub>ref</sub>(y) · exp(s(y) / β)</div>
+      <p class="hint">Fit a score s(y) so that P(y ≻ y′) ≈ σ(s(y) − s(y′)), then solve max E[s] − β·KL(π‖π<sub>ref</sub>). The closed form is one entropy-regularized FTRL step, i.e. MWU with η = 1/β. <span class="ref">Def. L5.7 · Alg. L5.3</span></p>
+      <div class="ctl">
+        <div class="lab"><label for="beta">KL strength β</label><span id="betav">0.20</span></div>
+        <input type="range" id="beta" min="-2.3" max="0.7" step="0.01" value="-1.609">
+      </div>
+      <div class="bars" id="rlhfBars"></div>
+      <p class="hint">Bar: π<sub>β</sub>. Tick: π<sub>ref</sub> (the base model). Right column: π<sub>β</sub> and the fitted score s.</p>
+      <div class="stats">
+        <div class="stat"><span class="k">Worst BT fit error</span><span class="v" id="btErr">–</span></div>
+        <div class="stat"><span class="k">Best reply beats π<sub>β</sub></span><span class="v" id="rlhfEx">–</span></div>
+      </div>
+      <p class="hint" id="btNote"></p>
+    </div>
+
+    <div class="card" id="nash">
+      <div class="sechead">
+        <div class="eyebrow">Method 2 · self-play on the preference game</div>
+        <h2>Nash learning from preferences</h2>
+      </div>
+      <div class="formula">payoff M = P − ½ &nbsp;·&nbsp; utility g<sup>(t)</sup> = M x<sup>(t)</sup> &nbsp;·&nbsp; gap(x̄) = 2·Reg(T)/T</div>
+      <p class="hint">The policy plays against a copy of itself. Each round it observes how every response would fare against its current mix (canonical setup, <span class="ref">Def. L4.8</span>). Because M is antisymmetric, the saddle-point gap of the average equals 2·Reg(T)/T exactly <span class="ref">Thm. L4.9</span>. Any sublinear-regret learner therefore drives the average to the von Neumann winner.</p>
+
+      <div class="tabs" role="group" aria-label="Learning algorithm" id="algoTabs"></div>
+      <p class="hint" id="algoNote"></p>
+
+      <div class="ctlrow">
+        <div class="ctl">
+          <div class="lab"><label for="eta">Step size η</label><span id="etav">auto</span></div>
+          <input type="range" id="eta" min="-3" max="0.5" step="0.01" value="-1">
+          <label class="check"><input type="checkbox" id="etaAuto" checked> Use the theorem’s tuned η</label>
+        </div>
+        <div class="ctl">
+          <div class="lab"><label for="anchor">KL anchor to π<sub>ref</sub></label><span id="anchorv">0</span></div>
+          <input type="range" id="anchor" min="0" max="1" step="0.02" value="0">
+          <p class="hint">MWU only. Regularized mirror descent (as in NLHF). Anchoring settles the last iterate but moves the target away from the exact Nash.</p>
+        </div>
+        <div class="ctl">
+          <div class="lab"><label for="Tsel">Horizon T</label><span id="Tv">1000</span></div>
+          <select id="Tsel" class="btn">
+            <option value="200">200 rounds</option>
+            <option value="1000" selected>1,000 rounds</option>
+            <option value="5000">5,000 rounds</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="player">
+        <button class="btn primary" id="play">Play</button>
+        <input type="range" id="tscrub" min="1" max="1000" value="1000" aria-label="Round">
+        <span class="mono small" id="tlab">t = 1000</span>
+      </div>
+
+      <div class="chartbox">
+        <div class="chartlab"><span>Last iterate x<sup>(t)</sup>: what the policy plays this round</span></div>
+        <canvas class="chart" id="cLast" height="96"></canvas>
+      </div>
+      <div class="chartbox">
+        <div class="chartlab"><span>Average iterate x̄<sup>(t)</sup>: what the theorem guarantees</span></div>
+        <canvas class="chart" id="cAvg" height="96"></canvas>
+        <div class="keyrow"><span><i style="background:var(--rA)"></i>A</span><span><i style="background:var(--rB)"></i>B</span><span><i style="background:var(--rC)"></i>C</span><span><i style="background:var(--rD)"></i>D</span><span><i style="background:var(--rE)"></i>E</span></div>
+      </div>
+      <div class="chartbox">
+        <div class="chartlab"><span>Nash gap of x̄<sup>(t)</sup> against round t, log–log</span></div>
+        <canvas class="chart" id="cGap" height="210"></canvas>
+        <div class="legend">
+          <span><i style="border-color:var(--accent)"></i>selected algorithm</span>
+          <span><i style="border-color:var(--accent);border-top-style:dashed"></i>its regret bound × 2/t</span>
+          <span><i style="border-color:var(--rD)"></i>other algorithms</span>
+        </div>
+      </div>
+      <div class="stats">
+        <div class="stat"><span class="k">Reg(t)</span><span class="v" id="sReg">–</span></div>
+        <div class="stat"><span class="k">2·Reg(t)/t</span><span class="v" id="sRat">–</span></div>
+        <div class="stat"><span class="k">Gap of x̄<sup>(t)</sup></span><span class="v" id="sGap">–</span></div>
+        <div class="stat"><span class="k">Bound on Reg(t)</span><span class="v" id="sBnd">–</span></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<section class="card" id="compare">
+  <div class="sechead">
+    <div class="eyebrow">Side by side</div>
+    <h2>What each method would ship</h2>
+    <p class="hint">“Best reply wins” is the win rate of the strongest single response against the policy: max<sub>y</sub> P(y ≻ π). A Nash policy scores exactly 50%, meaning nothing beats it. Higher means the policy can be exploited.</p>
+  </div>
+  <div class="cmp-wrap"><table class="cmp" id="cmp"></table></div>
+</section>
+
+<section class="section" id="try">
+  <div class="sechead"><div class="eyebrow">Things to try</div><h2>Four experiments, one minute each</h2></div>
+  <div class="try">
+    <div class="card"><h3>Break the reward model</h3><p>Load the cyclic human preset. No score vector can reproduce A ≻ B ≻ C ≻ A, so the BT fit error jumps and a best reply beats π<sub>β</sub> more than half the time. Lower β and π<sub>β</sub> concentrates further, getting more exploitable. The Nash mix stays balanced across the cycle.</p></div>
+    <div class="card"><h3>Watch FTL chase its tail</h3><p>Select FTL. Its last iterate jumps from one pure response to the next as the leader changes, which is fictitious play (Remark L5.1). Its average still converges in this zero-sum game, just without FTL having a worst-case guarantee.</p></div>
+    <div class="card"><h3>Last iterate vs average</h3><p>With MWU and the cyclic preset, the last iterate spirals around the equilibrium while the average settles. Increase the KL anchor and the last iterate settles too, at a regularized point pulled toward π<sub>ref</sub>.</p></div>
+    <div class="card"><h3>Let the judge take over</h3><p>Push the RLAIF mix toward 100%. The length-biased judge rewards the padded answer D. Watch the “vs human” column as both methods drift toward D. Self-play only optimizes the labels it is given.</p></div>
+  </div>
+</section>
+
+<section class="card" id="lecture">
+  <div class="sechead">
+    <div class="eyebrow">Where this sits in the lecture</div>
+    <h2>S05 concepts, as they appear in alignment</h2>
+  </div>
+  <div class="cmp-wrap">
+  <table class="map">
+    <tr><th>Lecture</th><th>In the lab</th><th>In LLM alignment</th></tr>
+    <tr><td class="mono small">Remark L5.1 · FTL</td><td>Best-respond to the cumulative payoff. The last iterate jumps between pure responses.</td><td>Repeatedly optimizing against the latest reward model or opponent. Unstable when preferences cycle.</td></tr>
+    <tr><td class="mono small">Alg. L5.1–L5.2 · RM, RM+</td><td>No hyperparameters. RM+ clips regrets at zero and usually converges fastest here.</td><td>Hyperparameter-free baselines for small preference games and for evaluation.</td></tr>
+    <tr><td class="mono small">Alg. L5.3 · MWU</td><td>Softmax of cumulative regret. Bound 2√(T log|A|) scales with log|A|.</td><td>The KL-regularized RLHF optimum π ∝ π<sub>ref</sub>·exp(r/β). SPPO-style updates are MWU on the preference game. log|A| is what makes huge response spaces tractable.</td></tr>
+    <tr><td class="mono small">Def. L5.8 · OMD</td><td>MWU with an extra KL pull toward π<sub>ref</sub> (the anchor slider).</td><td>Iterative / online RLHF and PPO with a KL penalty to the previous policy. NLHF uses regularized mirror descent.</td></tr>
+    <tr><td class="mono small">Def. L5.15 · OGD</td><td>Euclidean projection onto the simplex. Bound √(2T|A|).</td><td>The Euclidean baseline. It hits the simplex boundary and zeroes out responses abruptly.</td></tr>
+    <tr><td class="mono small">Thm. L4.9 (S04)</td><td>Gap of x̄ = 2·Reg(T)/T, shown live.</td><td>Why self-play preference optimization targets a Nash / minimax winner, not a single reward maximizer.</td></tr>
+  </table>
+  </div>
+  <p class="hint">Further reading: Munos et al., <i>Nash Learning from Human Feedback</i> (2023); Swamy et al., <i>A Minimaximalist Approach to RLHF</i> (2024); Wu et al., <i>Self-Play Preference Optimization</i> (2024); Rosset et al., <i>Direct Nash Optimization</i> (2024).</p>
+</section>
+
+<footer>A toy model built for teaching. The five responses and every preference number are made up to illustrate the dynamics, and nothing here calls a language model. Everything runs in your browser. The payoffs M = P − ½ lie in [−½, ½], so the plotted bounds are the lecture’s theorems rescaled for ‖g‖<sub>∞</sub> ≤ ½.</footer>
+</div>
+
+<script>
+(function(){
+const N=5, KEYS=['A','B','C','D','E'];
+const RESP=[
+ {name:'Short & friendly',words:34,text:'Sunlight is secretly every color mixed together. When it hits the air, the blue part gets bounced around the most, so blue light reaches your eyes from all over the sky.'},
+ {name:'Precise physics',words:55,text:'Air molecules scatter light (Rayleigh scattering), much more strongly for short wavelengths, roughly 1/λ⁴. Blue scatters about five times more than red. It isn’t violet because the Sun emits less violet and our eyes are less sensitive to it.'},
+ {name:'Pinball analogy',words:52,text:'Picture sunlight as balls of every color rolling through a giant pinball machine made of air. The little blue balls hit the bumpers and ping everywhere; the red ones mostly roll straight through. Look up and you see the blue ones bouncing around.'},
+ {name:'Long and padded',words:212,text:'Great question! There are several important factors to consider. 1) Light. 2) The atmosphere. 3) Scattering. 4) Human perception… In summary, the sky is blue because of scattering, which is a fascinating topic with many aspects to explore!'},
+ {name:'Confident but wrong',words:16,text:'The sky is blue because it reflects the ocean. That’s why it looks gray above deserts.'}
+];
+const REF=[0.22,0.18,0.20,0.25,0.15]; // base model π_ref
+
+function fromUpper(u){ // u: {"01":p,...}
+  const P=[...Array(N)].map(()=>Array(N).fill(0.5));
+  for(const k in u){const i=+k[0],j=+k[1];P[i][j]=u[k];P[j][i]=1-u[k];}
+  return P;
+}
+const PRESETS={
+  cycle:()=>fromUpper({'01':.65,'12':.65,'02':.35,'03':.70,'13':.60,'23':.70,'04':.92,'14':.90,'24':.90,'34':.80}),
+  trans:()=>{const s=[1.0,1.4,0.6,0.2,-1.5];const P=[...Array(N)].map(()=>Array(N).fill(.5));for(let i=0;i<N;i++)for(let j=0;j<N;j++)if(i!==j)P[i][j]=Math.round(100/(1+Math.exp(-(s[i]-s[j]))))/100;for(let i=0;i<N;i++)for(let j=i+1;j<N;j++)P[j][i]=+(1-P[i][j]).toFixed(2);return P;},
+  judge:()=>fromUpper({'01':.30,'02':.55,'03':.20,'04':.80,'12':.75,'13':.30,'14':.85,'23':.20,'24':.80,'34':.90})
+};
+const ALGOS=[
+ {id:'ftl',name:'FTL',note:'Follow-the-leader: play the response with the highest cumulative payoff so far. In self-play this is fictitious play. It has no regret guarantee.'},
+ {id:'rm',name:'RM',note:'Regret matching: play in proportion to positive cumulative regret. It has no step size. Reg(T) ≤ Ω√T (Thm. L5.2).'},
+ {id:'rmp',name:'RM+',note:'Regret matching+: clip the regret vector at zero each round. Same bound as RM (Thm. L5.5), usually much faster in practice.'},
+ {id:'mwu',name:'MWU / OMD',note:'Multiplicative weights: softmax of η × cumulative regret. Reg(T) ≤ log|A|/η + ηΣ‖g‖²∞ (Thm. L5.6). With the anchor it becomes KL-regularized mirror descent.'},
+ {id:'ogd',name:'OGD',note:'Online projected gradient ascent: x ← Π_Δ(x + ηg). Reg(T) ≤ D²/(2η) + (η/2)Σ‖g‖²₂ (Thm. L5.16).'}
+];
+
+// state
+let H=PRESETS.cycle(), J=PRESETS.judge(), editing='H';
+let lam=0, beta=0.2, algo='mwu', etaAuto=true, etaMan=0.1, anchor=0, T=1000, tCur=1000;
+let train, M, runs={}, bt, piB, nashX, playing=false;
+
+const $=id=>document.getElementById(id);
+const css=n=>getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const rc=i=>css('--r'+KEYS[i]);
+
+// ---------- math ----------
+const blend=()=>H.map((r,i)=>r.map((v,j)=>(1-lam)*v+lam*J[i][j]));
+const matvec=(A,x)=>A.map(r=>r.reduce((s,v,j)=>s+v*x[j],0));
+function projSimplex(v){const u=[...v].sort((a,b)=>b-a);let c=0,th=0;for(let i=0;i<u.length;i++){c+=u[i];const t=(c-1)/(i+1);if(u[i]-t>0)th=t;}return v.map(x=>Math.max(x-th,0));}
+function softmaxLog(L){const m=Math.max(...L);const e=L.map(v=>Math.exp(v-m));const s=e.reduce((a,b)=>a+b,0);return e.map(v=>v/s);}
+function etaFor(a){ if(!etaAuto) return etaMan; return a==='ogd'?Math.sqrt(8/(T*N)):2*Math.sqrt(Math.log(N)/T); }
+function boundAt(a,t,eta){
+  if(a==='rm'||a==='rmp') return Math.sqrt(N*t);
+  if(a==='mwu') return Math.log(N)/eta + eta*t/4;
+  if(a==='ogd') return 1/eta + eta*t*N/8;
+  return NaN;
+}
+function run(a){
+  const eta=etaFor(a), alpha=a==='mwu'?anchor:0;
+  const last=new Float32Array(T*N), avg=new Float32Array(T*N), gap=new Float32Array(T), reg=new Float32Array(T);
+  let x=Array(N).fill(1/N), r=Array(N).fill(0), q=Array(N).fill(0), G=Array(N).fill(0), L=Array(N).fill(Math.log(1/N));
+  const S=Array(N).fill(0), R=Array(N).fill(0); const logRef=REF.map(Math.log);
+  for(let t=0;t<T;t++){
+    for(let i=0;i<N;i++){last[t*N+i]=x[i];S[i]+=x[i];}
+    const g=matvec(M,x); const gx=g.reduce((s,v,i)=>s+v*x[i],0);
+    for(let i=0;i<N;i++){R[i]+=g[i]-gx;G[i]+=g[i];}
+    const xb=S.map(v=>v/(t+1));
+    for(let i=0;i<N;i++)avg[t*N+i]=xb[i];
+    reg[t]=Math.max(...R);
+    gap[t]=2*Math.max(...matvec(M,xb));
+    // next strategy
+    if(a==='ftl'){const m=Math.max(...G);const w=G.map(v=>v>=m-1e-12?1:0);const s=w.reduce((p,c)=>p+c,0);x=w.map(v=>v/s);}
+    else if(a==='rm'){for(let i=0;i<N;i++)r[i]+=g[i]-gx;const p=r.map(v=>Math.max(v,0));const s=p.reduce((a,b)=>a+b,0);x=s>0?p.map(v=>v/s):Array(N).fill(1/N);}
+    else if(a==='rmp'){for(let i=0;i<N;i++)q[i]=Math.max(q[i]+g[i]-gx,0);const s=q.reduce((a,b)=>a+b,0);x=s>0?q.map(v=>v/s):Array(N).fill(1/N);}
+    else if(a==='mwu'){for(let i=0;i<N;i++)L[i]=(L[i]+eta*alpha*logRef[i]+eta*g[i])/(1+eta*alpha);const m=Math.max(...L);for(let i=0;i<N;i++)L[i]-=m;x=softmaxLog(L);}
+    else if(a==='ogd'){x=projSimplex(x.map((v,i)=>v+eta*g[i]));}
+  }
+  return {last,avg,gap,reg,eta};
+}
+function fitBT(P){
+  let s=Array(N).fill(0);
+  for(let it=0;it<4000;it++){
+    const gr=Array(N).fill(0);
+    for(let i=0;i<N;i++)for(let j=0;j<N;j++)if(i!==j){const pr=1/(1+Math.exp(-(s[i]-s[j])));gr[i]+=P[i][j]-pr;}
+    for(let i=0;i<N;i++)s[i]+=0.3*gr[i];
+    const m=s.reduce((a,b)=>a+b,0)/N;s=s.map(v=>v-m);
+  }
+  let err=0,wi=0,wj=1;for(let i=0;i<N;i++)for(let j=i+1;j<N;j++){const e=Math.abs(1/(1+Math.exp(-(s[i]-s[j])))-P[i][j]);if(e>err){err=e;wi=i;wj=j;}}
+  return {s,err,wi,wj};
+}
+function solveNash(Mx){ // RM+ with linear averaging
+  let q=Array(N).fill(0),x=Array(N).fill(1/N),S=Array(N).fill(0),W=0;
+  for(let t=1;t<=20000;t++){const g=matvec(Mx,x);const gx=g.reduce((s,v,i)=>s+v*x[i],0);for(let i=0;i<N;i++){S[i]+=t*x[i];q[i]=Math.max(q[i]+g[i]-gx,0);}W+=t;const s=q.reduce((a,b)=>a+b,0);x=s>0?q.map(v=>v/s):Array(N).fill(1/N);}
+  return S.map(v=>v/W);
+}
+const bestReply=(P,x)=>{const v=matvec(P,x);let b=0;for(let i=1;i<N;i++)if(v[i]>v[b])b=i;return {p:v[b],i:b};};
+
+// ---------- recompute ----------
+function recompute(){
+  train=blend(); M=train.map(r=>r.map(v=>v-.5));
+  bt=fitBT(train);
+  runs={}; for(const a of ALGOS) runs[a.id]=run(a.id);
+  nashX=solveNash(M);
+  updateOrb();
+  tCur=Math.min(tCur,T);
+  renderAll();
+}
+function updateOrb(){
+  const cols=[0,1,2,3,4].map(rc);let acc=0;const stops=[];
+  nashX.forEach((p,i)=>{const a=acc*360,b=(acc+p)*360;stops.push(`${cols[i]} ${a.toFixed(1)}deg ${b.toFixed(1)}deg`);acc+=p;});
+  $('orbCore').style.background=`conic-gradient(from var(--spin), ${stops.join(', ')})`;
+  $('orbCap').innerHTML='Nash mix of the current game<br>'+nashX.map((p,i)=>`<b>${KEYS[i]}</b> ${(p*100).toFixed(0)}%`).join(' · ');
+}
+function computePiB(){const L=REF.map((r,i)=>Math.log(r)+bt.s[i]/beta);piB=softmaxLog(L);}
+
+// ---------- rendering ----------
+function renderResps(){
+  $('resps').innerHTML=RESP.map((r,i)=>`<div class="resp"><div class="top"><span class="chip" style="background:var(--r${KEYS[i]});color:${i<2?'#FBFAF7':'#171411'}">${KEYS[i]}</span><span class="name">${r.name}</span></div><p class="txt">${r.text}</p><span class="meta">~${r.words} words · π_ref ${(REF[i]*100).toFixed(0)}%</span></div>`).join('');
+}
+function renderMatrix(){
+  const P=editing==='H'?H:J;
+  let h='<tr><th></th>'+KEYS.map((k,j)=>`<th >${k}</th>`).join('')+'</tr>';
+  for(let i=0;i<N;i++){
+    h+=`<tr><th >${KEYS[i]}</th>`;
+    for(let j=0;j<N;j++){
+      if(i===j){h+='<td class="diag">–</td>';continue;}
+      const p=P[i][j], d=Math.abs(p-.5)*2;
+      const bg=p>.5?`background:color-mix(in oklab, var(--ink) ${Math.round(10+d*80)}%, var(--sunk));color:${d>.45?'#fff':'var(--ink)'};font-weight:500`:'background:var(--sunk);color:var(--muted)';
+      if(i<j) h+=`<td style="${bg}"><input id="m${i}${j}" type="number" min="0" max="1" step="0.05" value="${p.toFixed(2)}" aria-label="P(${KEYS[i]} beats ${KEYS[j]})"></td>`;
+      else h+=`<td style="${bg}" class="mono">${p.toFixed(2)}</td>`;
+    }
+    h+='</tr>';
+  }
+  $('mx').innerHTML=h;
+}
+function renderRLHF(){
+  computePiB();
+  $('betav').textContent=beta.toFixed(2);
+  $('rlhfBars').innerHTML=piB.map((p,i)=>`<div class="bar"><span style="font-weight:700">${KEYS[i]}</span><div class="trk"><i style="width:${(p*100).toFixed(1)}%;background:var(--r${KEYS[i]})"></i><b style="left:calc(${(REF[i]*100).toFixed(1)}% - 1px)"></b></div><span style="text-align:right">${(p*100).toFixed(0)}% <span class="muted">${bt.s[i]>=0?'+':'−'}${Math.abs(bt.s[i]).toFixed(1)}</span></span></div>`).join('');
+  $('btErr').textContent=(bt.err*100).toFixed(1)+' pts';
+  const br=bestReply(train,piB);
+  $('rlhfEx').textContent=(br.p*100).toFixed(1)+'% ('+KEYS[br.i]+')';
+  $('btNote').textContent = bt.err>0.05
+    ? `The fit misses P(${KEYS[bt.wi]} ≻ ${KEYS[bt.wj]}) = ${train[bt.wi][bt.wj].toFixed(2)} by ${(bt.err*100).toFixed(0)} points. The preferences contain a cycle that no single score can express.`
+    : `Bradley–Terry fits these preferences almost exactly, so a single reward captures them.`;
+}
+function renderAlgoTabs(){
+  $('algoTabs').innerHTML=ALGOS.map(a=>`<button data-a="${a.id}" aria-pressed="${a.id===algo}">${a.name}</button>`).join('');
+  $('algoNote').textContent=ALGOS.find(a=>a.id===algo).note;
+  const uses=algo==='mwu'||algo==='ogd';
+  $('eta').disabled=!uses||etaAuto; $('etaAuto').disabled=!uses; $('anchor').disabled=algo!=='mwu';
+  $('etav').textContent=uses?(runs[algo]?runs[algo].eta.toFixed(3):'')+(etaAuto?' (auto)':''):'not used';
+}
+function setupCanvas(c){const dpr=window.devicePixelRatio||1;const w=c.clientWidth,h=+c.getAttribute('height');c.width=Math.round(w*dpr);c.height=Math.round(h*dpr);c.style.height=h+'px';const ctx=c.getContext('2d');ctx.setTransform(dpr,0,0,dpr,0,0);return {ctx,w,h};}
+function drawStack(id,arr){
+  const c=$(id),{ctx,w,h}=setupCanvas(c);
+  ctx.fillStyle=css('--sunk');ctx.fillRect(0,0,w,h);
+  const cols=[0,1,2,3,4].map(rc);
+  const upto=tCur;
+  for(let px=0;px<w;px++){
+    const t=Math.floor(px/w*T); if(t>=upto)break;
+    let y=h;
+    for(let i=0;i<N;i++){const v=arr[t*N+i]*h;ctx.fillStyle=cols[i];ctx.fillRect(px,y-v,1.2,Math.max(0,v-(v>2?1:0)));y-=v;}
+  }
+  ctx.strokeStyle=css('--ink');ctx.globalAlpha=.5;ctx.beginPath();const cx=Math.min(w-1,tCur/T*w);ctx.moveTo(cx,0);ctx.lineTo(cx,h);ctx.stroke();ctx.globalAlpha=1;
+}
+function drawGap(){
+  const c=$('cGap'),{ctx,w,h}=setupCanvas(c);
+  const padL=44,padR=10,padT=8,padB=24, W=w-padL-padR, Hh=h-padT-padB;
+  const ymin=1e-4,ymax=1;
+  const X=t=>padL+Math.log10(t)/Math.log10(T)*W;
+  const Y=v=>padT+(1-(Math.log10(Math.max(v,ymin))-Math.log10(ymin))/(Math.log10(ymax)-Math.log10(ymin)))*Hh;
+  ctx.font='11px "Geist Mono", ui-monospace, Menlo, monospace';ctx.fillStyle=css('--muted');ctx.strokeStyle=css('--line');ctx.lineWidth=1;
+  for(let e=-4;e<=0;e++){const y=Y(10**e);ctx.beginPath();ctx.moveTo(padL,y);ctx.lineTo(w-padR,y);ctx.stroke();ctx.textAlign='right';ctx.textBaseline='middle';ctx.fillText(e===0?'1':'1e'+e,padL-6,y);}
+  for(let e=0;10**e<=T;e++){const x=X(10**e);ctx.beginPath();ctx.moveTo(x,padT);ctx.lineTo(x,padT+Hh);ctx.stroke();ctx.textAlign='center';ctx.textBaseline='top';ctx.fillText(10**e>=1000?(10**e/1000)+'k':String(10**e),x,padT+Hh+6);}
+  const line=(arr,fn,col,lw,dash,alpha)=>{ctx.save();ctx.strokeStyle=col;ctx.lineWidth=lw;ctx.globalAlpha=alpha;ctx.setLineDash(dash);ctx.beginPath();let started=false;const n=Math.min(tCur,T);const step=Math.max(1,Math.floor(n/600));for(let t=1;t<=n;t+=(t<50?1:step)){const v=fn?fn(t):arr[t-1];if(!isFinite(v))continue;const px=X(t),py=Y(v);if(!started){ctx.moveTo(px,py);started=true;}else ctx.lineTo(px,py);}ctx.stroke();ctx.restore();};
+  ctx.save();ctx.beginPath();ctx.rect(padL,padT,W,Hh);ctx.clip();
+  for(const a of ALGOS) if(a.id!==algo) line(runs[a.id].gap,null,css('--rD'),1,[],1);
+  const R=runs[algo];
+  if(algo!=='ftl') line(null,t=>2*boundAt(algo,t,R.eta)/t,css('--accent'),1.5,[5,4],.9);
+  line(R.gap,null,css('--accent'),2.2,[],1);
+  ctx.restore();
+}
+function fmt(v){return Math.abs(v)>=100?v.toFixed(0):Math.abs(v)>=1?v.toFixed(2):v.toPrecision(3);}
+function renderNash(){
+  $('tscrub').max=T;$('tscrub').value=tCur;$('tlab').textContent='t = '+tCur;$('Tv').textContent=T.toLocaleString();
+  $('anchorv').textContent=anchor.toFixed(2);
+  const R=runs[algo];
+  drawStack('cLast',R.last);drawStack('cAvg',R.avg);drawGap();
+  const t=tCur, reg=R.reg[t-1];
+  $('sReg').textContent=fmt(reg);$('sRat').textContent=fmt(2*reg/t);$('sGap').textContent=fmt(R.gap[t-1]);
+  $('sBnd').textContent=algo==='ftl'?'none':fmt(boundAt(algo,t,R.eta));
+}
+function stackHTML(x){return `<div class="stack">${x.map((p,i)=>`<span style="width:${(p*100).toFixed(2)}%;background:var(--r${KEYS[i]})" title="${KEYS[i]} ${(p*100).toFixed(0)}%"></span>`).join('')}</div>`;}
+function pill(p){const d=p-.5;const cls=d<0.02?'good':d<0.1?'warn':'bad';return `<span class="pill ${cls}">${(p*100).toFixed(1)}%</span>`;}
+function renderCmp(){
+  const R=runs[algo], t=tCur;
+  const xa=[...R.avg.slice((t-1)*N,t*N)], xl=[...R.last.slice((t-1)*N,t*N)];
+  const rows=[
+    ['RLHF policy π<sub>β</sub>',`BT + KL, β = ${beta.toFixed(2)}`,piB],
+    ['Self-play average x̄',`${ALGOS.find(a=>a.id===algo).name}, t = ${t}`,xa],
+    ['Self-play last iterate',`${ALGOS.find(a=>a.id===algo).name}, t = ${t}`,xl],
+    ['Nash equilibrium','of the training game (reference)',nashX],
+    ['Base model π<sub>ref</sub>','before any alignment',REF]
+  ];
+  let h='<tr><th>Policy</th><th>Mix over A–E</th><th>Most likely</th><th>Best reply wins · training prefs</th><th>Best reply wins · human prefs</th></tr>';
+  for(const [n,sub,x] of rows){
+    let b=0;for(let i=1;i<N;i++)if(x[i]>x[b])b=i;
+    const tr=bestReply(train,x), hu=bestReply(H,x);
+    h+=`<tr><td><div style="font-weight:500">${n}</div><div class="hint">${sub}</div></td><td>${stackHTML(x)}</td><td class="num"><span style="font-weight:700;font-family:var(--sans)">${KEYS[b]}</span> ${(x[b]*100).toFixed(0)}%</td><td class="num">${pill(tr.p)} <span class="muted">by ${KEYS[tr.i]}</span></td><td class="num">${pill(hu.p)} <span class="muted">by ${KEYS[hu.i]}</span></td></tr>`;
+  }
+  $('cmp').innerHTML=h;
+}
+function renderAll(){renderRLHF();renderAlgoTabs();renderNash();renderCmp();}
+
+// ---------- events ----------
+let raf=0;const schedule=()=>{cancelAnimationFrame(raf);raf=requestAnimationFrame(recompute);};
+$('mx').addEventListener('change',e=>{
+  const el=e.target;if(!el.id||el.id[0]!=='m')return;
+  const i=+el.id[1],j=+el.id[2];let p=parseFloat(el.value);if(!isFinite(p))p=.5;p=Math.min(1,Math.max(0,p));
+  const P=editing==='H'?H:J;P[i][j]=p;P[j][i]=+(1-p).toFixed(4);renderMatrix();schedule();
+});
+function setTab(t){editing=t;$('tabH').setAttribute('aria-pressed',t==='H');$('tabJ').setAttribute('aria-pressed',t==='J');renderMatrix();}
+$('tabH').onclick=()=>setTab('H');$('tabJ').onclick=()=>setTab('J');
+$('presets').addEventListener('click',e=>{const p=e.target.dataset.preset;if(!p)return;if(p==='judge'){J=PRESETS.judge();setTab('J');}else{H=PRESETS[p]();setTab('H');}schedule();});
+$('lam').oninput=e=>{lam=+e.target.value;$('lamv').textContent=Math.round(lam*100)+'%';schedule();};
+$('beta').oninput=e=>{beta=Math.exp(+e.target.value);renderRLHF();renderCmp();};
+$('algoTabs').addEventListener('click',e=>{const a=e.target.dataset.a;if(!a)return;algo=a;renderAll();});
+$('eta').oninput=e=>{etaMan=10**(+e.target.value);schedule();};
+$('etaAuto').onchange=e=>{etaAuto=e.target.checked;schedule();};
+$('anchor').oninput=e=>{anchor=+e.target.value;schedule();};
+$('Tsel').onchange=e=>{T=+e.target.value;tCur=T;schedule();};
+$('tscrub').oninput=e=>{tCur=+e.target.value;renderNash();renderCmp();};
+$('play').onclick=()=>{
+  if(playing){playing=false;$('play').textContent='Play';return;}
+  playing=true;$('play').textContent='Pause';if(tCur>=T)tCur=1;
+  const reduce=matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const step=()=>{if(!playing)return;tCur=Math.min(T,tCur+(reduce?T:Math.max(1,Math.ceil(T/300))));renderNash();renderCmp();if(tCur>=T){playing=false;$('play').textContent='Play';return;}requestAnimationFrame(step);};
+  requestAnimationFrame(step);
+};
+$('heroPlay').onclick=()=>{document.getElementById('nash').scrollIntoView({behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth',block:'start'});tCur=T;if(playing)$('play').click();$('play').click();};
+const redraw=()=>{if(runs[algo]){renderMatrix();renderNash();}};
+new ResizeObserver(()=>redraw()).observe($('nash'));
+matchMedia('(prefers-color-scheme: dark)').addEventListener('change',redraw);
+new MutationObserver(redraw).observe(document.documentElement,{attributes:true,attributeFilter:['data-theme']});
+
+renderResps();renderMatrix();recompute();
+})();
+</script>
+</body>
+</html>
